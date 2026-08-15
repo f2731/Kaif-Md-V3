@@ -712,14 +712,14 @@ async function startSession(sessionId) {
             sessionState.pairingCode = null;
             const statusCode = (lastDisconnect?.error instanceof Boom) ?
                 lastDisconnect.error.output.statusCode : 500;
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut && statusCode !== 440;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
-            console.log(`Session ${sessionId}: Connection closed, reconnecting: ${shouldReconnect}`);
+            console.log(`Session ${sessionId}: Connection closed (status: ${statusCode}), reconnecting: ${shouldReconnect}`);
             if (shouldReconnect) {
                 setTimeout(() => startSession(sessionId), 3000);
             } else {
+                console.log(`Session ${sessionId}: Disconnected/Logged out by WhatsApp (status: ${statusCode}). Session retained in MongoDB.`);
                 sessions.delete(sessionId);
-                await kaif_clearSession(sessionId);
             }
         } else if (connection === 'open') {
             sessionState.isConnected = true;
@@ -1112,7 +1112,7 @@ async function startSession(sessionId) {
                             } catch (e) { }
                         }
 
-                        const isOwner = kaif_msg.key.fromMe || isSuperOwner || allOwnerNumbers.some(num => num && cleanSender.includes(num));
+                        const isOwner = kaif_msg.key.fromMe || isSuperOwner || isOwnerMessage;
 
                         const botConfig = await getCachedBotConfig(sessionId);
                         const workMode = (botConfig?.workMode || config.workMode || 'private').toLowerCase();
@@ -1137,7 +1137,12 @@ async function startSession(sessionId) {
                             kaif_plugins
                         });
                     } catch (err) {
-                        console.error(`Error in plugin ${kaif_cmd_input}:`, err.message);
+                        console.error(`Error executing plugin .${kaif_cmd_input}:`, err.stack || err.message);
+                        try {
+                            await kaif_sock.sendMessage(kaif_origin, {
+                                text: `❌ *Command Error (.${kaif_cmd_input}):* ${err.message || 'An error occurred.'}`
+                            });
+                        } catch (sendErr) {}
                     }
                 }
             }
